@@ -20,7 +20,8 @@ if (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyCont
 Write-Host "Starting FastAPI at http://127.0.0.1:8000 ..."
 $backendProcess = Start-Process `
     -FilePath $venvPython `
-    -ArgumentList @("-m", "uvicorn", "main:app", "--app-dir", $backendDir, "--host", "127.0.0.1", "--port", "8000") `
+    -ArgumentList @("-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000") `
+    -WorkingDirectory $backendDir `
     -PassThru `
     -WindowStyle Hidden
 
