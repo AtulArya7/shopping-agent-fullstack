@@ -13,9 +13,10 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from reviews_api import get_product_rating
 
-load_dotenv()
+BACKEND_DIR = os.path.dirname(__file__)
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "store.db")
+DB_PATH = os.path.join(BACKEND_DIR, "store.db")
 
 llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0) #qwen/qwen3-32b - deprecated in July 2026
 vision_llm = ChatGroq(model="qwen/qwen3.8-27b", temperature=0) #meta-llama/llama-4-scout-17b-16e-instruct

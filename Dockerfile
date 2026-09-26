@@ -1,40 +1,20 @@
-# syntax=docker/dockerfile:1
-
-# ---------------------------------------------------------------------------
-# Stage 1 — build the React frontend into static files
-# ---------------------------------------------------------------------------
-FROM node:20-slim AS frontend-build
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-COPY frontend/ ./
-# Baked in at build time — this is a public-facing URL, not a secret, and
-# since the frontend is served from the same container as the API, the
-# default of the browser's own origin (empty string, see api.js) works too.
-ARG VITE_API_URL=""
-ENV VITE_API_URL=${VITE_API_URL}
-RUN npm run build
-
-# ---------------------------------------------------------------------------
-# Stage 2 — the FastAPI app that serves both the API and the built frontend
-# ---------------------------------------------------------------------------
 FROM python:3.11-slim
 
-# Hugging Face Spaces runs containers as UID 1000 — match that so file
-# permissions work whether you deploy here or anywhere else.
-RUN useradd -m -u 1000 appuser
-WORKDIR /home/appuser/app
+WORKDIR /app
 
-COPY backend/requirements.txt .
+COPY backend/requirements.txt backend/requirements.txt
+COPY streamlit_app/requirements.txt streamlit_app/requirements.txt
+COPY requirements.txt requirements.txt
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY --chown=appuser:appuser backend/ .
-COPY --chown=appuser:appuser --from=frontend-build /frontend/dist ./static
+COPY backend/ backend/
+COPY streamlit_app/ streamlit_app/
 
-USER appuser
-ENV HOME=/home/appuser
+ENV BACKEND_URL=http://127.0.0.1:8000 \
+    PYTHONUNBUFFERED=1
 
-EXPOSE 7860
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]
-#CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+EXPOSE 10000
+
+CMD ["sh", "-c", "uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 & exec streamlit run streamlit_app/app.py --server.address 0.0.0.0 --server.port ${PORT:-10000} --server.headless true"]
