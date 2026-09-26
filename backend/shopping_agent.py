@@ -9,14 +9,19 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
+from database import (
+    DB_PATH,
+    list_preferences,
+    list_user_orders,
+    order_summary,
+    set_preference as db_set_preference,
+)
 from reviews_api import get_product_rating
+from user_context import require_context_user
 
 BACKEND_DIR = os.path.dirname(__file__)
 load_dotenv(os.path.join(BACKEND_DIR, ".env"))
-
-DB_PATH = os.path.join(BACKEND_DIR, "store.db")
 
 llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0) #qwen/qwen3-32b - deprecated in July 2026
 vision_llm = ChatGroq(model="qwen/qwen3.8-27b", temperature=0) #meta-llama/llama-4-scout-17b-16e-instruct
@@ -84,6 +89,7 @@ def checkout(product_id: int) -> str:
     Place an order for the given product ID. Saves the order to the database and returns
     a confirmation message with the order ID, product name, and price.
     """
+    user_id = require_context_user()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name, price FROM products WHERE id = ?", (product_id,))
@@ -95,8 +101,8 @@ def checkout(product_id: int) -> str:
 
     name, price = row
     cursor.execute(
-        "INSERT INTO orders (product_id, product_name, price) VALUES (?, ?, ?)",
-        (product_id, name, price),
+        "INSERT INTO orders (product_id, product_name, price, user_id) VALUES (?, ?, ?, ?)",
+        (product_id, name, price, user_id),
     )
     order_id = cursor.lastrowid
     conn.commit()
@@ -106,6 +112,41 @@ def checkout(product_id: int) -> str:
         f"Order #{order_id} confirmed! '{name}' has been successfully ordered for ${price:.2f}. "
         f"Your order will arrive in 3-5 business days. Thank you for shopping with us!"
     )
+
+
+@tool
+def get_order_history(limit: int = 10) -> str:
+    """Return the authenticated user's recent orders and aggregate purchase summary."""
+    user_id = require_context_user()
+    safe_limit = max(1, min(limit, 50))
+    return json.dumps(
+        {
+            "recent_orders": list_user_orders(user_id, safe_limit),
+            "summary": order_summary(user_id),
+        }
+    )
+
+
+@tool
+def get_user_preferences() -> str:
+    """Return explicit shopping preferences saved by the authenticated user."""
+    return json.dumps(list_preferences(require_context_user()))
+
+
+@tool
+def save_user_preference(preference_key: str, preference_value: str) -> str:
+    """Save a shopping preference only when the user explicitly asks to remember it."""
+    allowed_keys = {
+        "max_price", "minimum_rating", "organic_only", "preferred_category",
+        "dietary_requirement", "preferred_brand",
+    }
+    normalized_key = preference_key.strip().lower().replace(" ", "_")
+    if normalized_key not in allowed_keys:
+        return "Unsupported preference type."
+    db_set_preference(
+        require_context_user(), normalized_key, preference_value.strip(), source="explicit"
+    )
+    return f"Saved preference: {normalized_key} = {preference_value.strip()}"
 
 
 @tool
@@ -147,7 +188,15 @@ def describe_product_image(image_path: str) -> str:
 # Agent
 
 agent = create_agent(
-    tools=[search_products, get_rating, checkout, describe_product_image],
+    tools=[
+        search_products,
+        get_rating,
+        checkout,
+        describe_product_image,
+        get_order_history,
+        get_user_preferences,
+        save_user_preference,
+    ],
     model=llm,
     system_prompt=(
         "You are a helpful shopping assistant. Follow these rules strictly.\n\n"
@@ -174,7 +223,14 @@ agent = create_agent(
         "2. Call checkout with that product_id (the number from (ID:X)).\n"
         "3. Confirm the order to the user in plain text.\n\n"
         "Never place an order unless the user explicitly confirms. "
-        "Never guess a product_id - always take it from the (ID:X) in your own previous message."
+        "Never guess a product_id - always take it from the (ID:X) in your own previous message.\n\n"
+        "PERSONALIZATION:\n"
+        "1. Call get_user_preferences before product search when saved defaults may matter.\n"
+        "2. A preference is a default; an explicit current request always overrides it.\n"
+        "3. Call save_user_preference only when the user explicitly says remember, always, or save.\n\n"
+        "ORDER HISTORY:\n"
+        "Call get_order_history for questions about prior orders, spending, categories, or reordering. "
+        "Never claim another user's orders because the tool is scoped to the authenticated user."
     ),
 )
 

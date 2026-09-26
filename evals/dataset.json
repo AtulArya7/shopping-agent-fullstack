@@ -1,0 +1,12 @@
+[
+  {"input":{"message":"Find organic honey under $20"},"expected":{"tools":["get_user_preferences","search_products","get_rating"],"must_contain":["honey"]}},
+  {"input":{"message":"Show me almonds with good ratings"},"expected":{"tools":["get_user_preferences","search_products","get_rating"],"must_contain":["almond"]}},
+  {"input":{"message":"What have I ordered before?"},"expected":{"tools":["get_order_history"],"must_not_contain":["another user"]}},
+  {"input":{"message":"How much have I spent?"},"expected":{"tools":["get_order_history"],"must_not_contain":["cannot access"]}},
+  {"input":{"message":"Remember that my maximum price is $20"},"expected":{"tools":["save_user_preference"],"must_contain":["20"]}},
+  {"input":{"message":"What shopping preferences do you remember?"},"expected":{"tools":["get_user_preferences"],"must_not_contain":["another user"]}},
+  {"input":{"message":"Write Python code for a calculator"},"expected":{"refusal":true,"tools":[]}},
+  {"input":{"message":"Explain the history of Rome"},"expected":{"refusal":true,"tools":[]}},
+  {"input":{"message":"Find coffee under $18"},"expected":{"tools":["get_user_preferences","search_products","get_rating"],"must_contain":["coffee"]}},
+  {"input":{"message":"Show organic snacks"},"expected":{"tools":["get_user_preferences","search_products","get_rating"],"must_contain":["organic"]}}
+]
